@@ -1,5 +1,6 @@
 import {useState} from 'react';
 import {useEffect} from 'react';
+import {useParams} from "react-router-dom";
 import humps from 'humps';
 import Autocomplete from '@mui/material/Autocomplete';
 import TextField from '@mui/material/TextField';
@@ -12,6 +13,12 @@ import IconButton from '@mui/material/IconButton';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import Typography from '@mui/material/Typography';
+import LinearProgress from '@mui/material/LinearProgress';
+import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogContentText from '@mui/material/DialogContentText';
+import DialogTitle from '@mui/material/DialogTitle';
 import './styles.css';
 
 const Item = styled('div')(({ theme }) => ({
@@ -32,7 +39,6 @@ const Item = styled('div')(({ theme }) => ({
 
 const StackItem = styled('div')(({ theme }) => ({
 	backgroundColor: '#fff',
-	//padding: theme.spacing(1),
 	textAlign: 'left',
 	borderRadius: 4,
 	...theme.applyStyles('dark', {
@@ -52,6 +58,7 @@ function Herb(herb, changeHerb, changeQuantity, availableHerbs, selectedHerbs, r
 									options={availableHerbs?.filter(h => selectedHerbs.findIndex(sh => sh.herbId === h.id) < 0).map(h => h.name)}
 									renderInput={(params) => <TextField {...params}
 																											label="Kräuter"/>}
+									value={herb.herbId === -1 ? "" : availableHerbs.find(h => h.id === herb.herbId).name}
 									onChange={(event, newValue) => changeHerb(herb.key, newValue)}
 									disabled={orderSuccess}
 							/>
@@ -66,6 +73,7 @@ function Herb(herb, changeHerb, changeQuantity, availableHerbs, selectedHerbs, r
 									sx={{ width: 1}}
 									name={herb.key.toString()}
 									disabled={orderSuccess}
+									value={herb.quantity}
 									onChange={changeQuantity} />
 						</Item>
 					</Grid>
@@ -83,17 +91,21 @@ function Herb(herb, changeHerb, changeQuantity, availableHerbs, selectedHerbs, r
 
 export default function HerbForm() {
 
-	const [order, setOrder] = useState({
-		firstName: null,
-		lastName: null,
-		mail: null,
+	const {orderId} = useParams();
+
+	const [order, setOrder] = useState(orderId === undefined ? {
+		firstName: "",
+		lastName: "",
+		mail: "",
 		herbs: [
 				{key: 0, herbId: -1, quantity: ''},
 				{key: 1, herbId: -1, quantity: ''},
 				{key: 2, herbId: -1, quantity: ''},
 				{key: 3, herbId: -1, quantity: ''},
 				{key: 4, herbId: -1, quantity: ''}
-		]});
+		]} : null);
+
+	const [isLoading, setIsLoading] = useState(true);
 
 	const [orderSuccess, setOrderSuccess] = useState(false);
 
@@ -101,13 +113,50 @@ export default function HerbForm() {
 
 	const [message, setMessage] = useState(null);
 
-	useEffect(() => fetchAvailableHerbs(), []);
+	useEffect(() => initializeHerbOrder(), []);
+
+	function initializeHerbOrder() {
+		fetchAvailableHerbs()
+		.then(() => {
+			if (orderId !== undefined) {
+				fetchOrder();
+			}
+		});
+	}
+
+	function fetchOrder() {
+		const requestOptions = {
+			method: 'GET',
+			headers: {Accept: 'application/json,application/problem+json'}
+		}
+		return fetch(process.env.REACT_APP_BACKEND_URL + '/api/orders/' + orderId,
+				requestOptions)
+		.then(response => {
+			if (response.status === 404) {
+				throw Error("Order " + orderId + " was not found");
+			} else if (response.status !== 200) {
+				throw Error(response.json().detail);
+			} else {
+				return response.json();
+			}
+		})
+		.then(data => humps.camelizeKeys(data))
+		.then(data => addHerbKeys(data))
+		.then(data => setOrder(data))
+		.then(() =>	setIsLoading(false))
+		.catch(error => console.log("Error: " + error));
+	}
+
+	function addHerbKeys(order) {
+		order.herbs.map((herb, index) => herb.key = index);
+		return order;
+	}
 
 	function fetchAvailableHerbs() {
 		const requestOptions = {
 			method: 'GET'
 		};
-		fetch(process.env.REACT_APP_BACKEND_URL + '/api/herbs', requestOptions)
+		return fetch(process.env.REACT_APP_BACKEND_URL + '/api/herbs', requestOptions)
 			.then(response => response.json())
 			.then(data => humps.camelizeKeys(data))
 			.then(data => setAvailableHerbs(data));
@@ -171,31 +220,66 @@ export default function HerbForm() {
 			setMessage('Bitte entferne die doppelten Kräuter!');
 			return;
 		}
+
+		setOrderSuccess(true);
+		setMessage(<LinearProgress />);
+		if (orderId === undefined) {
+			saveNewOrder(orderForBackend);
+		} else {
+			updateExistingOrder(orderForBackend)
+		}
+	}
+
+	function saveNewOrder(orderForBackend) {
 		const requestOptions = {
 			method: 'POST',
 			headers: {'Content-Type': 'application/json'},
 			body: JSON.stringify(humps.decamelizeKeys(orderForBackend))
 		};
 		fetch(process.env.REACT_APP_BACKEND_URL + '/api/orders', requestOptions)
-			.then(response => {
-				if (response.status === 201) {
-					return response.json();
-				} else {
-					throw Error();
+		.then(response => {
+			if (response.status === 201) {
+				return response.json();
+			} else {
+				throw Error();
+			}
+		})
+		.then(json => {
+			setMessage(<div><p>Die Bestellung wurde aufgenommen. Vielen Dank!</p>
+				<p>Deine Bestellung kannst du jederzeit ändern. Gehe dazu einfach auf <a
+						href={`https://meine-kraeuterbestellung.online/order/${json.external_id}`}>https://meine-kraeuterbestellung.online/order/{json.external_id}</a>.
+				</p></div>);
+		})
+		.catch(error => {
+					setMessage(<p>Beim Abschicken der Bestellung ist ein Fehler
+						aufgetreten!</p>);
+					setOrderSuccess(true);
 				}
-			})
-			.then(json => {
-				setOrderSuccess(true);
-				setMessage(<div><p>Die Bestellung wurde aufgenommen. Vielen Dank!</p>
-					<p>Deine Bestellung kannst du jederzeit ändern. Gehe dazu einfach auf <a
-							href={`https://meine-kraeuterbestellung.online/order/${json.external_id}`}>https://meine-kraeuterbestellung.online/order/{json.external_id}</a>.
-					</p></div>);
-			})
-			.catch(error => setMessage(<p>Beim Abschicken der Bestellung ist ein Fehler
-				aufgetreten!</p>)
-			);
+		);
 	}
-	
+
+	function updateExistingOrder(orderForBackend) {
+		const requestOptions = {
+			method: 'PUT',
+			headers: {'Content-Type': 'application/json', Accept: 'application/json,application/problem+json'},
+			body: JSON.stringify(humps.decamelizeKeys(orderForBackend))
+		};
+		fetch(process.env.REACT_APP_BACKEND_URL + '/api/orders/' + orderId,
+				requestOptions)
+		.then(response => {
+			if (response.status === 200) {
+				return response.json();
+			} else {
+				throw Error();
+			}
+		})
+		.then(json => {
+			setOrderSuccess(true);
+			setMessage(<div><p>Die Bestellung wurde aktualisiert!</p><p>Deine Bestellung kannst du jederzeit ändern. Gehe dazu einfach auf <a href={`https://meine-kraeuterbestellung.online/order/${json.external_id}`}>https://meine-kraeuterbestellung.online/order/{json.external_id}</a>.</p></div>);
+		})
+		.catch(error => setMessage(<p>Beim Abschicken der Bestellung ist ein Fehler aufgetreten!</p>));
+	}
+
 	function onRemoveHerb(herbKey) {
 		order.herbs = order.herbs.filter(
 				(item) => item.key !== herbKey
@@ -221,36 +305,70 @@ export default function HerbForm() {
 
 	function onChangeFirstName(event) {
 		order['firstName'] = event.target.value;
+		setOrder({...order});
 	}
 
 	function onChangeLastName(event) {
 		order['lastName'] = event.target.value;
+		setOrder({...order});
 	}
 
 	function onChangeMail(event) {
 		order['mail'] = event.target.value;
+		setOrder({...order});
+	}
+
+	if (order === null) {
+		return (
+				<Box sx={{width: {s: 1, sm: 600}}}>
+					<Typography variant="h2" gutterBottom>Kräuterbestellung
+						2025</Typography>
+					{
+						isLoading ?
+								<LinearProgress/>
+								: <p>Die angegebene Kräuterbestellung wurde nicht gefunden!</p>
+					}
+				</Box>
+		);
 	}
 
 	return (
-			<Box>
+			<Box sx={{width: {s: 1, sm: 600}}}>
 				<Typography variant="h2" gutterBottom>Kräuterbestellung 2025</Typography>
 				<form>
-					<Box sx={{ width: {s: 1, sm: 600}, marginTop: 3, marginBottom: 3, padding: 2, border: "1px solid rgb(192,192,192)", borderRadius: 3, backgroundColor: "rgb(255,255,255)" }}>
+					<Box sx={{ marginTop: 3, marginBottom: 3, padding: 2, border: "1px solid rgb(192,192,192)", borderRadius: 3, backgroundColor: "rgb(255,255,255)" }}>
 						<Typography variant="h4" gutterBottom>Persönliche Informationen</Typography>
 						<Stack spacing={2}>
 							<StackItem>
-								<TextField label="Vorname" variant="outlined" sx={{width: 1}} onChange={onChangeFirstName} disabled={orderSuccess} />
+								<TextField
+										label="Vorname"
+										variant="outlined"
+										sx={{width: 1}}
+										value={order.firstName}
+										onChange={onChangeFirstName}
+										disabled={orderSuccess} />
 							</StackItem>
 							<StackItem>
-								<TextField label="Nachname" variant="outlined" sx={{width: 1}} onChange={onChangeLastName} disabled={orderSuccess} />
+								<TextField
+										label="Nachname"
+										variant="outlined"
+										sx={{width: 1}}
+										value={order.lastName}
+										onChange={onChangeLastName}
+										disabled={orderSuccess} />
 							</StackItem>
 							<StackItem>
-								<TextField label="E-Mail-Adresse" variant="outlined"
-													 sx={{width: 1}} onChange={onChangeMail} disabled={orderSuccess} />
+								<TextField
+										label="E-Mail-Adresse"
+										variant="outlined"
+										sx={{width: 1}}
+										value={order.mail}
+										onChange={onChangeMail}
+										disabled={orderSuccess} />
 							</StackItem>
 						</Stack>
 					</Box>
-					<Box sx={{ width: {s: 1, sm: 600}, marginTop: 3, marginBottom: 3, padding: 2, border: "1px solid rgb(192,192,192)", borderRadius: 3, backgroundColor: "rgb(255,255,255)" }}>
+					<Box sx={{ marginTop: 3, marginBottom: 3, padding: 2, border: "1px solid rgb(192,192,192)", borderRadius: 3, backgroundColor: "rgb(255,255,255)" }}>
 						<Typography variant="h4" gutterBottom>Kräuter</Typography>
 						<Stack>
 							{
@@ -265,7 +383,7 @@ export default function HerbForm() {
 							</StackItem>
 						</Stack>
 					</Box>
-					<Box sx={{width: {s: 1, sm: 600}, marginTop: 3, marginBottom: 3}}>
+					<Box sx={{ marginTop: 3, marginBottom: 3 }}>
 						<Button variant="contained" onClick={saveHerb}
 										disabled={orderSuccess}>Bestellung Abschicken</Button>
 					</Box>

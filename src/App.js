@@ -4,8 +4,7 @@ import {
 		Route
 } from "react-router-dom";
 import UnderConstruction from "./underConstruction";
-import CreateOrder from "./createOrder";
-import UpdateOrder from "./updateOrder";
+import CreateOrUpdateOrder from "./createOrUpdateOrder";
 import '@fontsource/roboto/300.css';
 import '@fontsource/roboto/400.css';
 import '@fontsource/roboto/500.css';
@@ -17,8 +16,8 @@ export default function App() {
 			<Router>
 				  <Routes>
 							<Route path="/" element={<UnderConstruction />}/>
-							<Route path="/order" element={<CreateOrder />}/>
-							<Route path="/order/:orderId" element={<UpdateOrder />}/>
+							<Route path="/order" element={<CreateOrUpdateOrder />}/>
+							<Route path="/order/:orderId" element={<CreateOrUpdateOrder />}/>
 					</Routes>
 			</Router>
 	)
