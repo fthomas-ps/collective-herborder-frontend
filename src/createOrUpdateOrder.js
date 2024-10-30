@@ -321,7 +321,7 @@ export default function HerbForm() {
 	if (order === null) {
 		return (
 				<Box sx={{width: {s: 1, sm: 600}}}>
-					<Typography variant="h2" gutterBottom>Kräuterbestellung
+					<Typography variant="h3" gutterBottom>Kräuterbestellung
 						2025</Typography>
 					{
 						isLoading ?
@@ -334,7 +334,7 @@ export default function HerbForm() {
 
 	return (
 			<Box sx={{width: {s: 1, sm: 600}}}>
-				<Typography variant="h2" gutterBottom>Kräuterbestellung 2025</Typography>
+				<Typography variant="h3" gutterBottom>Kräuterbestellung 2025</Typography>
 				<form>
 					<Box sx={{ marginTop: 3, marginBottom: 3, padding: 2, border: "1px solid rgb(192,192,192)", borderRadius: 3, backgroundColor: "rgb(255,255,255)" }}>
 						<Typography variant="h4" gutterBottom>Persönliche Informationen</Typography>
