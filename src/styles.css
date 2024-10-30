@@ -4,8 +4,9 @@
 
 body {
   font-family: sans-serif;
-  margin: 20px;
-  padding: 0;
+  margin: 0;
+  padding: 20px;
+  background-color: rgb(208,240,255);
 }
 
 h1 {
@@ -48,12 +49,6 @@ ul {
 
 * {
   box-sizing: border-box;
-}
-
-body {
-  font-family: sans-serif;
-  margin: 20px;
-  padding: 0;
 }
 
 .square {

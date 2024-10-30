@@ -6,6 +6,10 @@ import {
 import UnderConstruction from "./underConstruction";
 import CreateOrder from "./createOrder";
 import UpdateOrder from "./updateOrder";
+import '@fontsource/roboto/300.css';
+import '@fontsource/roboto/400.css';
+import '@fontsource/roboto/500.css';
+import '@fontsource/roboto/700.css';
 
 export default function App() {
 

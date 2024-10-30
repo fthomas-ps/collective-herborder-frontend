@@ -1,27 +1,83 @@
 import {useState} from 'react';
 import {useEffect} from 'react';
 import humps from 'humps';
-import './styles.css'
+import Autocomplete from '@mui/material/Autocomplete';
+import TextField from '@mui/material/TextField';
+import Button from '@mui/material/Button';
+import Stack from '@mui/system/Stack';
+import { styled } from '@mui/system';
+import Box from '@mui/system/Box';
+import Grid from '@mui/system/Grid';
+import IconButton from '@mui/material/IconButton';
+import DeleteIcon from '@mui/icons-material/Delete';
+import AddIcon from '@mui/icons-material/Add';
+import Typography from '@mui/material/Typography';
+import './styles.css';
 
-function HerbOption(herb, index) {
-	return (
-			<option key={herb.id} value={herb.id}>{herb.name}</option>
-	);
-}
+const Item = styled('div')(({ theme }) => ({
+	width: '100%',
+	height: '100%',
+	backgroundColor: '#fff',
+	//border: '1px solid',
+	//borderColor: '#ced7e0',
+	padding: theme.spacing(1),
+	borderRadius: '4px',
+	textAlign: 'left',
+	valign: 'bottom',
+	...theme.applyStyles('dark', {
+		backgroundColor: '#1A2027',
+		borderColor: '#444d58',
+	}),
+}));
 
-function Herb(herb, changeHerb, changeQuantity, availableHerbs, removeHerb, orderSuccess) {
+const StackItem = styled('div')(({ theme }) => ({
+	backgroundColor: '#fff',
+	//padding: theme.spacing(1),
+	textAlign: 'left',
+	borderRadius: 4,
+	...theme.applyStyles('dark', {
+		backgroundColor: '#262B32',
+	}),
+}));
+
+function Herb(herb, changeHerb, changeQuantity, availableHerbs, selectedHerbs, removeHerb,
+		orderSuccess) {
 	return (
-		<div key={herb.key} className="board-row">
-			<select id="dropdown" name={herb.key} value={herb.herbId}
-							onChange={changeHerb} className="column" disabled={orderSuccess}>
-				{
-					availableHerbs?.map(
-							(availableHerb, index) => HerbOption(availableHerb, index))
-				}
-			</select>
-			<input type="text" name={herb.key} value={herb.quantity} onChange={changeQuantity} className="column" disabled={orderSuccess} />
-			<button type="button" name={herb.key} onClick={removeHerb} disabled={orderSuccess}>Entfernen</button>
-		</div>
+			<StackItem key={herb.key}>
+				<Grid container>
+					<Grid size={{ xs: 12, sm: 8 }}>
+						<Item>
+							<Autocomplete
+									disablePortal
+									options={availableHerbs?.filter(h => selectedHerbs.findIndex(sh => sh.herbId === h.id) < 0).map(h => h.name)}
+									renderInput={(params) => <TextField {...params}
+																											label="Kräuter"/>}
+									onChange={(event, newValue) => changeHerb(herb.key, newValue)}
+									disabled={orderSuccess}
+							/>
+						</Item>
+					</Grid>
+					<Grid size={{ xs: 10, sm: 3 }}>
+						<Item>
+							<TextField
+									label="Anzahl"
+									variant="outlined"
+									type="number"
+									sx={{ width: 1}}
+									name={herb.key.toString()}
+									disabled={orderSuccess}
+									onChange={changeQuantity} />
+						</Item>
+					</Grid>
+					<Grid size={{ xs: 2, sm: 1 }}>
+						<Item sx={{ display: "flex", alignItems: "center" }}>
+							<IconButton aria-label="delete" disabled={orderSuccess} onClick={() => removeHerb(herb.key)}>
+								<DeleteIcon />
+							</IconButton>
+						</Item>
+					</Grid>
+				</Grid>
+			</StackItem>
 	);
 }
 
@@ -41,7 +97,7 @@ export default function HerbForm() {
 
 	const [orderSuccess, setOrderSuccess] = useState(false);
 
-	const [availableHerbs, setAvailableHerbs] = useState(() => fetchAvailableHerbs());
+	const [availableHerbs, setAvailableHerbs] = useState([]);
 
 	const [message, setMessage] = useState(null);
 
@@ -54,10 +110,7 @@ export default function HerbForm() {
 		fetch(process.env.REACT_APP_BACKEND_URL + '/api/herbs', requestOptions)
 			.then(response => response.json())
 			.then(data => humps.camelizeKeys(data))
-			.then(data => setAvailableHerbs(
-					[{id: -1, name: '---Bitte wählen---'},
-						...data
-					]));
+			.then(data => setAvailableHerbs(data));
 	}
 
 	function addHerb() {
@@ -102,7 +155,7 @@ export default function HerbForm() {
 			return;
 		}
 		const invalidHerbEntries = orderForBackend.herbs
-			.filter(herb => herb.herbId < 0 || herb.quantity == null || isEmpty(herb.quantity));
+			.filter(herb => herb.herbId < 0 || herb.quantity == null || isEmpty(herb.quantity) || herb.quantity <= 0);
 		if (invalidHerbEntries.length > 0) {
 			setMessage('Bitte kontrolliere deine Kräuter. In einzelnen Zeilen fehlen Kräuternamen oder die Anzahl!');
 			return;
@@ -143,17 +196,19 @@ export default function HerbForm() {
 			);
 	}
 	
-	function onRemoveHerb(event) {
+	function onRemoveHerb(herbKey) {
 		order.herbs = order.herbs.filter(
-				(item) => item.key.toString() !== event.target.name
+				(item) => item.key !== herbKey
 		);
 		setOrder({...order});
 	}
 
-	function onChangeHerb(event) {
+	function onChangeHerb(herbKey, newValue) {
+		const herb = availableHerbs
+			.find(herb => herb.name === newValue);
 		order.herbs
-			.filter(herb => herb.key.toString() === event.target.name)
-			.forEach(herb => herb.herbId = event.target.value);
+			.filter(h => h.key === herbKey)
+			.forEach(h => h.herbId = herb.id);
 		setOrder({...order});
 	}
 	
@@ -177,42 +232,46 @@ export default function HerbForm() {
 	}
 
 	return (
-			<div>
-				<h1>Kräuterbestellung 2025</h1>
+			<Box>
+				<Typography variant="h2" gutterBottom>Kräuterbestellung 2025</Typography>
 				<form>
-					<div className="form-paragraph">
-						<div className="board-row">
-							<label className="column">Vorname:</label>
-							<input type="text" onChange={onChangeFirstName} className="wide-column" disabled={orderSuccess}></input>
-						</div>
-						<div className="board-row">
-							<label className="column">Nachname:</label>
-							<input type="text" onChange={onChangeLastName} className="wide-column" disabled={orderSuccess}></input>
-						</div>
-						<div className="board-row">
-							<label className="column">E-Mail-Adresse:</label>
-							<input type="text" id="mail-input" onChange={onChangeMail} className="wide-column" disabled={orderSuccess}></input>
-						</div>
-					</div>
-					<div className="board-row">
-						<label className="column">Kräuter</label>
-						<label className="column">Anzahl</label>
-					</div>
-					<div className="form-paragraph">
-						{
-							order.herbs.map((element, index) => Herb(element,
-									onChangeHerb, onChangeQuantity, availableHerbs, onRemoveHerb, orderSuccess))
-						}
-						<div className="form-paragraph">
-							<button type="button" onClick={addHerb} disabled={orderSuccess}>Hinzufügen</button>
-						</div>
-					</div>
-					<div className="form-paragraph">
-						<button type="button" onClick={saveHerb} disabled={orderSuccess}>Abschicken</button>
-					</div>
+					<Box sx={{ width: {s: 1, sm: 600}, marginTop: 3, marginBottom: 3, padding: 2, border: "1px solid rgb(192,192,192)", borderRadius: 3, backgroundColor: "rgb(255,255,255)" }}>
+						<Typography variant="h4" gutterBottom>Persönliche Informationen</Typography>
+						<Stack spacing={2}>
+							<StackItem>
+								<TextField label="Vorname" variant="outlined" sx={{width: 1}} onChange={onChangeFirstName} disabled={orderSuccess} />
+							</StackItem>
+							<StackItem>
+								<TextField label="Nachname" variant="outlined" sx={{width: 1}} onChange={onChangeLastName} disabled={orderSuccess} />
+							</StackItem>
+							<StackItem>
+								<TextField label="E-Mail-Adresse" variant="outlined"
+													 sx={{width: 1}} onChange={onChangeMail} disabled={orderSuccess} />
+							</StackItem>
+						</Stack>
+					</Box>
+					<Box sx={{ width: {s: 1, sm: 600}, marginTop: 3, marginBottom: 3, padding: 2, border: "1px solid rgb(192,192,192)", borderRadius: 3, backgroundColor: "rgb(255,255,255)" }}>
+						<Typography variant="h4" gutterBottom>Kräuter</Typography>
+						<Stack>
+							{
+								order.herbs.map((element, index) => Herb(element,
+										onChangeHerb, onChangeQuantity, availableHerbs, order.herbs,
+										onRemoveHerb, orderSuccess))
+							}
+							<StackItem sx={{ paddingTop: 1 }}>
+								<Button variant="contained" onClick={addHerb}
+												disabled={orderSuccess}
+												startIcon={<AddIcon/>}>Hinzufügen</Button>
+							</StackItem>
+						</Stack>
+					</Box>
+					<Box sx={{width: {s: 1, sm: 600}, marginTop: 3, marginBottom: 3}}>
+						<Button variant="contained" onClick={saveHerb}
+										disabled={orderSuccess}>Bestellung Abschicken</Button>
+					</Box>
 
 					{message}
 				</form>
-			</div>
+			</Box>
 	);
 }
