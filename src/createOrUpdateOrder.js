@@ -143,8 +143,11 @@ export default function HerbForm() {
 		.then(data => humps.camelizeKeys(data))
 		.then(data => addHerbKeys(data))
 		.then(data => setOrder(data))
-		.then(() =>	setIsLoading(false))
-		.catch(error => console.log("Error: " + error));
+		.then(() => setIsLoading(false))
+		.catch(error => {
+			console.log("Error: " + error);
+			setIsLoading(false);
+		});
 	}
 
 	function addHerbKeys(order) {
