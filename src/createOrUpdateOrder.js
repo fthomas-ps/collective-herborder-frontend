@@ -14,19 +14,12 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import Typography from '@mui/material/Typography';
 import LinearProgress from '@mui/material/LinearProgress';
-import Dialog from '@mui/material/Dialog';
-import DialogActions from '@mui/material/DialogActions';
-import DialogContent from '@mui/material/DialogContent';
-import DialogContentText from '@mui/material/DialogContentText';
-import DialogTitle from '@mui/material/DialogTitle';
 import './styles.css';
 
 const Item = styled('div')(({ theme }) => ({
 	width: '100%',
 	height: '100%',
 	backgroundColor: '#fff',
-	//border: '1px solid',
-	//borderColor: '#ced7e0',
 	padding: theme.spacing(1),
 	borderRadius: '4px',
 	textAlign: 'left',
@@ -47,7 +40,7 @@ const StackItem = styled('div')(({ theme }) => ({
 }));
 
 function Herb(herb, changeHerb, changeQuantity, availableHerbs, selectedHerbs, removeHerb,
-		orderSuccess) {
+		orderState) {
 	return (
 			<StackItem key={herb.key}>
 				<Grid container>
@@ -60,7 +53,7 @@ function Herb(herb, changeHerb, changeQuantity, availableHerbs, selectedHerbs, r
 																											label="Kräuter"/>}
 									value={herb.herbId === -1 ? "" : availableHerbs.find(h => h.id === herb.herbId).name}
 									onChange={(event, newValue) => changeHerb(herb.key, newValue)}
-									disabled={orderSuccess}
+									disabled={orderState !== 'placeOrder'}
 							/>
 						</Item>
 					</Grid>
@@ -72,14 +65,14 @@ function Herb(herb, changeHerb, changeQuantity, availableHerbs, selectedHerbs, r
 									type="number"
 									sx={{ width: 1}}
 									name={herb.key.toString()}
-									disabled={orderSuccess}
+									disabled={orderState !== 'placeOrder'}
 									value={herb.quantity}
 									onChange={changeQuantity} />
 						</Item>
 					</Grid>
 					<Grid size={{ xs: 2, sm: 1 }}>
 						<Item sx={{ display: "flex", alignItems: "center" }}>
-							<IconButton aria-label="delete" disabled={orderSuccess} onClick={() => removeHerb(herb.key)}>
+							<IconButton aria-label="delete" disabled={orderState !== 'placeOrder'} onClick={() => removeHerb(herb.key)}>
 								<DeleteIcon />
 							</IconButton>
 						</Item>
@@ -105,9 +98,11 @@ export default function HerbForm() {
 				{key: 4, herbId: -1, quantity: ''}
 		]} : null);
 
-	const [isLoading, setIsLoading] = useState(true);
+	const [ordersOpen, setOrdersOpen] = useState(false);
+	const [orderBatch, setOrderBatch] = useState(null);
 
-	const [orderSuccess, setOrderSuccess] = useState(false);
+	// Supported values are loading, loading_technical_error, placeOrder, saveInProcess, saveSuccessful, closed
+	const [orderState, setOrderState] = useState('loading');
 
 	const [availableHerbs, setAvailableHerbs] = useState([]);
 
@@ -116,15 +111,69 @@ export default function HerbForm() {
 	useEffect(() => initializeHerbOrder(), []);
 
 	function initializeHerbOrder() {
-		fetchAvailableHerbs()
-		.then(() => {
+		fetchOrderBatch()
+		.then(batch => {
+			fetchAvailableHerbs();
+			return batch;
+		})
+		.then(batch => {
 			if (orderId !== undefined) {
-				fetchOrder();
+				fetchOrder(batch);
+			} else {
+				updateOrderState(batch);
 			}
 		});
 	}
 
-	function fetchOrder() {
+	function fetchOrderBatch() {
+		const requestOptions = {
+			method: 'GET',
+			headers: {Accept: 'application/json,application/problem+json'}
+		}
+		return fetch(process.env.REACT_APP_BACKEND_URL + '/api/order_batches/abcde',
+				requestOptions)
+		.then(response => {
+			if (response.status === 404) {
+				throw Error("Order Batch " + orderId + " was not found");
+			} else if (response.status !== 200) {
+				throw Error(response.json().detail);
+			} else {
+				return response.json();
+			}
+		})
+		.then(data => humps.camelizeKeys(data))
+		.then(data => {
+			setOrderBatch(data);
+			return data;
+		})
+		.catch(error => {
+			console.log("Error: " + error);
+			setOrderState('loading_technical_error')
+		});
+	}
+
+	function fetchAvailableHerbs() {
+		const requestOptions = {
+			method: 'GET',
+			headers: {Accept: "application/json,application/problem+json"}
+		};
+		return fetch(process.env.REACT_APP_BACKEND_URL + '/api/herbs', requestOptions)
+		.then(response => response.json())
+		.then(data => humps.camelizeKeys(data))
+		.then(data => setAvailableHerbs(data));
+	}
+
+	function updateOrderState(newOrderBatch) {
+		if (newOrderBatch.orderState === 'CREATED') {
+			setOrderState('notYetOpen')
+		} else if (newOrderBatch.orderState !== 'ORDERS_OPEN') {
+			setOrderState('closed')
+		} else {
+			setOrderState('placeOrder')
+		}
+	}
+
+	function fetchOrder(newOrderBatch) {
 		const requestOptions = {
 			method: 'GET',
 			headers: {Accept: 'application/json,application/problem+json'}
@@ -133,8 +182,10 @@ export default function HerbForm() {
 				requestOptions)
 		.then(response => {
 			if (response.status === 404) {
+				setOrderState("place_order");
 				throw Error("Order " + orderId + " was not found");
 			} else if (response.status !== 200) {
+				setOrderState("loading_technical_error");
 				throw Error(response.json().detail);
 			} else {
 				return response.json();
@@ -143,26 +194,15 @@ export default function HerbForm() {
 		.then(data => humps.camelizeKeys(data))
 		.then(data => addHerbKeys(data))
 		.then(data => setOrder(data))
-		.then(() => setIsLoading(false))
+		.then(() => updateOrderState(newOrderBatch))
 		.catch(error => {
 			console.log("Error: " + error);
-			setIsLoading(false);
 		});
 	}
 
 	function addHerbKeys(order) {
 		order.herbs.map((herb, index) => herb.key = index);
 		return order;
-	}
-
-	function fetchAvailableHerbs() {
-		const requestOptions = {
-			method: 'GET'
-		};
-		return fetch(process.env.REACT_APP_BACKEND_URL + '/api/herbs', requestOptions)
-			.then(response => response.json())
-			.then(data => humps.camelizeKeys(data))
-			.then(data => setAvailableHerbs(data));
 	}
 
 	function addHerb() {
@@ -224,7 +264,7 @@ export default function HerbForm() {
 			return;
 		}
 
-		setOrderSuccess(true);
+		setOrderState('saveInProcess');
 		setMessage(<LinearProgress />);
 		if (orderId === undefined) {
 			saveNewOrder(orderForBackend);
@@ -248,6 +288,7 @@ export default function HerbForm() {
 			}
 		})
 		.then(json => {
+			setOrderState('saveSuccessful');
 			setMessage(<div><p>Die Bestellung wurde aufgenommen. Vielen Dank!</p>
 				<p>Deine Bestellung kannst du jederzeit ändern. Gehe dazu einfach auf <a
 						href={`https://meine-kraeuterbestellung.online/order/${json.external_id}`}>https://meine-kraeuterbestellung.online/order/{json.external_id}</a>.
@@ -256,7 +297,7 @@ export default function HerbForm() {
 		.catch(error => {
 					setMessage(<p>Beim Abschicken der Bestellung ist ein Fehler
 						aufgetreten!</p>);
-					setOrderSuccess(true);
+					setOrderState('placeOrder');
 				}
 		);
 	}
@@ -277,7 +318,7 @@ export default function HerbForm() {
 			}
 		})
 		.then(json => {
-			setOrderSuccess(true);
+			setOrderState('saveSuccessful');
 			setMessage(<div><p>Die Bestellung wurde aktualisiert!</p><p>Deine Bestellung kannst du jederzeit ändern. Gehe dazu einfach auf <a href={`https://meine-kraeuterbestellung.online/order/${json.external_id}`}>https://meine-kraeuterbestellung.online/order/{json.external_id}</a>.</p></div>);
 		})
 		.catch(error => setMessage(<p>Beim Abschicken der Bestellung ist ein Fehler aufgetreten!</p>));
@@ -290,12 +331,20 @@ export default function HerbForm() {
 		setOrder({...order});
 	}
 
+	function findHerbByName(newValue) {
+		if (newValue === null) {
+			return -1;
+		}
+		return availableHerbs
+				.find(herb => herb.name === newValue)
+				.id;
+	}
+
 	function onChangeHerb(herbKey, newValue) {
-		const herb = availableHerbs
-			.find(herb => herb.name === newValue);
+		const newHerbId = findHerbByName(newValue);
 		order.herbs
 			.filter(h => h.key === herbKey)
-			.forEach(h => h.herbId = herb.id);
+			.forEach(h => h.herbId = newHerbId);
 		setOrder({...order});
 	}
 	
@@ -324,20 +373,37 @@ export default function HerbForm() {
 	if (order === null) {
 		return (
 				<Box sx={{width: {s: 1, sm: 600}}}>
-					<Typography variant="h3" gutterBottom>Kräuterbestellung
-						2025</Typography>
-					{
-						isLoading ?
-								<LinearProgress/>
-								: <p>Die angegebene Kräuterbestellung wurde nicht gefunden!</p>
-					}
+					<Typography variant="h3" gutterBottom>Kräuterbestellung</Typography>
+					{orderState === 'loading' && <LinearProgress/>}
+					{orderState === 'loading_technical_error' && <p>Beim Laden der Kräuterbestellung ist ein Fehler aufgetreten! Bitte versuche es später noch einmal.</p>}
+					{orderState !== 'loading' && orderState !== 'loading_technical_error' && <p>Die angegebene Kräuterbestellung wurde nicht gefunden!</p>}
+				</Box>
+		);
+	}
+
+	if (orderState === 'notYetOpen') {
+		return (
+				<Box sx={{width: {s: 1, sm: 600}}}>
+					<Typography variant="h3" gutterBottom>{orderBatch.name}</Typography>
+					<Box sx={{ marginTop: 3, marginBottom: 3, padding: 2, border: "1px solid rgb(192,192,192)", borderRadius: 3, backgroundColor: "rgb(255,255,255)" }}>
+						<p>Die Kräuterbestellung wird demnächst geöffnet. Bitte habe noch etwas
+						Geduld und schaue später noch einmal vorbei.</p>
+					</Box>
 				</Box>
 		);
 	}
 
 	return (
 			<Box sx={{width: {s: 1, sm: 600}}}>
-				<Typography variant="h3" gutterBottom>Kräuterbestellung 2025</Typography>
+				<Typography variant="h3" gutterBottom>{orderBatch.name}</Typography>
+				{
+					orderState === 'closed' &&
+						<Box sx={{ marginTop: 3, marginBottom: 3, padding: 2, border: "1px solid rgb(192,192,192)", borderRadius: 3, backgroundColor: "rgb(255,255,255)" }}>
+							<p>Die Kräuterbestellung ist abgeschlossen. Es kann keine neue Bestellung
+							mehr aufgegeben und keine Bestellung mehr verändert werden.</p>
+							<p>Bei Fragen zur Bestellung wende dich bitte an Shivam oder Amrut.</p>
+						</Box>
+				}
 				<form>
 					<Box sx={{ marginTop: 3, marginBottom: 3, padding: 2, border: "1px solid rgb(192,192,192)", borderRadius: 3, backgroundColor: "rgb(255,255,255)" }}>
 						<Typography variant="h4" gutterBottom>Persönliche Informationen</Typography>
@@ -349,7 +415,7 @@ export default function HerbForm() {
 										sx={{width: 1}}
 										value={order.firstName}
 										onChange={onChangeFirstName}
-										disabled={orderSuccess} />
+										disabled={orderState !== 'placeOrder'} />
 							</StackItem>
 							<StackItem>
 								<TextField
@@ -358,7 +424,7 @@ export default function HerbForm() {
 										sx={{width: 1}}
 										value={order.lastName}
 										onChange={onChangeLastName}
-										disabled={orderSuccess} />
+										disabled={orderState !== 'placeOrder'} />
 							</StackItem>
 							<StackItem>
 								<TextField
@@ -367,7 +433,7 @@ export default function HerbForm() {
 										sx={{width: 1}}
 										value={order.mail}
 										onChange={onChangeMail}
-										disabled={orderSuccess} />
+										disabled={orderState !== 'placeOrder'} />
 							</StackItem>
 						</Stack>
 					</Box>
@@ -377,18 +443,18 @@ export default function HerbForm() {
 							{
 								order.herbs.map((element, index) => Herb(element,
 										onChangeHerb, onChangeQuantity, availableHerbs, order.herbs,
-										onRemoveHerb, orderSuccess))
+										onRemoveHerb, orderState))
 							}
 							<StackItem sx={{ paddingTop: 1 }}>
 								<Button variant="contained" onClick={addHerb}
-												disabled={orderSuccess}
+												disabled={orderState !== 'placeOrder'}
 												startIcon={<AddIcon/>}>Hinzufügen</Button>
 							</StackItem>
 						</Stack>
 					</Box>
 					<Box sx={{ marginTop: 3, marginBottom: 3 }}>
 						<Button variant="contained" onClick={saveHerb}
-										disabled={orderSuccess}>Bestellung Abschicken</Button>
+										disabled={orderState !== 'placeOrder'}>Bestellung Abschicken</Button>
 					</Box>
 
 					{message}
